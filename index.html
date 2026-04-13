@@ -33,7 +33,8 @@ const db = getDatabase(app);
 // =====================
 window.type = "";
 const ITEM_NAME = "TUI_TOA_HUONG";
-let isProcessing = false; // 🔥 FIX CHÍNH
+let isProcessing = false;
+let unsubscribe = null;
 
 // =====================
 // STEP UI
@@ -48,6 +49,9 @@ window.goStep = function(step, selectedType=""){
     if(step===2){
         document.getElementById("stepTitle").innerText =
             type==="gift" ? "Nhận quà" : "Bán sản phẩm";
+
+        // 🔥 disable trước khi chọn quầy
+        document.querySelector("#step2 button").disabled = true;
     }
 }
 
@@ -59,30 +63,48 @@ window.resetForm = function(){
 }
 
 // =====================
-// REALTIME STOCK
+// REALTIME STOCK (FIX)
 // =====================
-const stockRef = ref(db, "kho/" + ITEM_NAME + "/stock");
+document.getElementById("counter").addEventListener("change", function(){
 
-onValue(stockRef, (snapshot) => {
-
-    let stock = snapshot.val() || 0;
-
-    document.getElementById("stockDisplay").innerText =
-        "Tồn kho: " + stock;
-
-    if(stock <= 100){
-        document.getElementById("stockWarning").innerText =
-            "Sản phẩm chỉ còn lại " + stock;
-    } else {
-        document.getElementById("stockWarning").innerText = "";
-    }
-
+    const counter = this.value;
     const btn = document.querySelector("#step2 button");
 
-    // 🔥 CHỐNG override khi đang xử lý
-    if(btn && !isProcessing){
-        btn.disabled = stock <= 0;
+    if(!counter){
+        document.getElementById("stockDisplay").innerText = "Tồn kho: ...";
+        btn.disabled = true;
+        return;
     }
+
+    // 🔥 HỦY listener cũ
+    if(unsubscribe) unsubscribe();
+
+    const stockRef = ref(db, "kho/" + counter + "/" + ITEM_NAME + "/stock");
+
+    unsubscribe = onValue(stockRef, (snapshot) => {
+
+        let stock = snapshot.val();
+
+        if(stock === null){
+            document.getElementById("stockDisplay").innerText = "Chưa có dữ liệu";
+            btn.disabled = true;
+            return;
+        }
+
+        document.getElementById("stockDisplay").innerText =
+            "Tồn kho: " + stock;
+
+        if(stock <= 100){
+            document.getElementById("stockWarning").innerText =
+                "Sản phẩm chỉ còn lại " + stock;
+        } else {
+            document.getElementById("stockWarning").innerText = "";
+        }
+
+        if(!isProcessing){
+            btn.disabled = stock <= 0;
+        }
+    });
 });
 
 // =====================
@@ -95,7 +117,6 @@ window.submitForm = function(){
     if(btn.disabled || isProcessing) return;
 
     isProcessing = true;
-
     btn.disabled = true;
     btn.innerText = "Đang xử lý...";
 
@@ -110,7 +131,7 @@ window.submitForm = function(){
         return;
     }
 
-    const itemRef = ref(db, "kho/" + ITEM_NAME);
+    const itemRef = ref(db, "kho/" + counter + "/" + ITEM_NAME);
 
     runTransaction(itemRef, (data) => {
 
@@ -140,7 +161,6 @@ window.submitForm = function(){
             return;
         }
 
-        // LOG
         const logRef = ref(db, "logs/" + type);
 
         push(logRef, {
@@ -150,7 +170,6 @@ window.submitForm = function(){
             counter: counter
         });
 
-        // 🔥 delay nhẹ cho UX mượt
         setTimeout(() => {
             resetForm();
         }, 300);
